@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@sentry/react": "*",
-    "@sentry/tracing": "*",
+    "@sentry/react": "latest || *",
+    "@sentry/tracing": "latest || *",
     "@testing-library/jest-dom": "5.14.1",
     "@testing-library/react": "13.0.0",
     "@testing-library/user-event": "13.2.1",
@@ -22,7 +22,10 @@
   "scripts": {
     "build": "react-scripts build",
     "start": "serve -s build",
-    "test": "playwright test"
+    "test": "playwright test",
+    "clean": "npx rimraf node_modules,pnpm-lock.yaml",
+    "test:build": "pnpm install && npx playwright install && pnpm build",
+    "test:assert": "pnpm test"
   },
   "eslintConfig": {
     "extends": [

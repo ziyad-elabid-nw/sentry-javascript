@@ -5,6 +5,7 @@ import type { inputData } from '@sentry-internal/rrweb/typings/types';
 import { sentryTest } from '../../../utils/fixtures';
 import type { IncrementalRecordingSnapshot } from '../../../utils/replayHelpers';
 import {
+  getFullRecordingSnapshots,
   getIncrementalRecordingSnapshots,
   shouldSkipReplayTest,
   waitForReplayRequest,
@@ -19,8 +20,8 @@ function isInputMutation(
 sentryTest(
   'should mask input initial value and its changes from `maskAllInputs` and allow unmasked selector',
   async ({ browserName, forceFlushReplay, getLocalTestPath, page }) => {
-    // TODO(replay): This is flakey on firefox and webkit (~1%) where we do not always get the latest mutation.
-    if (shouldSkipReplayTest() || ['firefox', 'webkit'].includes(browserName)) {
+    // TODO(replay): This is flakey on webkit (~1%) where we do not always get the latest mutation.
+    if (shouldSkipReplayTest() || browserName === 'webkit') {
       sentryTest.skip();
     }
 
@@ -56,7 +57,10 @@ sentryTest(
     const url = await getLocalTestPath({ testDir: __dirname });
 
     await page.goto(url);
-    await reqPromise0;
+    const fullSnapshot = getFullRecordingSnapshots(await reqPromise0);
+    const stringifiedSnapshot = JSON.stringify(fullSnapshot);
+    expect(stringifiedSnapshot.includes('Submit form')).toBe(false);
+    expect(stringifiedSnapshot.includes('Unmasked button')).toBe(true);
 
     const text = 'test';
 
@@ -78,8 +82,8 @@ sentryTest(
 sentryTest(
   'should mask textarea initial value and its changes from `maskAllInputs` and allow unmasked selector',
   async ({ browserName, forceFlushReplay, getLocalTestPath, page }) => {
-    // TODO(replay): This is flakey on firefox and webkit (~1%) where we do not always get the latest mutation.
-    if (shouldSkipReplayTest() || ['firefox', 'webkit'].includes(browserName)) {
+    // TODO(replay): This is flakey on webkit (~1%) where we do not always get the latest mutation.
+    if (shouldSkipReplayTest() || browserName === 'webkit') {
       sentryTest.skip();
     }
 

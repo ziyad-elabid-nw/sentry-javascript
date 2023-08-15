@@ -1,6 +1,6 @@
 import * as SentryUtils from '@sentry/utils';
 
-import { DEFAULT_FLUSH_MIN_DELAY, WINDOW } from '../../src/constants';
+import { DEFAULT_FLUSH_MIN_DELAY, MAX_SESSION_LIFE, WINDOW } from '../../src/constants';
 import type { ReplayContainer } from '../../src/replay';
 import { clearSession } from '../../src/session/clearSession';
 import type { EventBuffer } from '../../src/types';
@@ -26,6 +26,7 @@ type MockFlush = jest.MockedFunction<ReplayContainer['_flush']>;
 type MockRunFlush = jest.MockedFunction<ReplayContainer['_runFlush']>;
 
 const prevLocation = WINDOW.location;
+const prevBrowserPerformanceTimeOrigin = SentryUtils.browserPerformanceTimeOrigin;
 
 describe('Integration | flush', () => {
   let domHandler: (args: any) => any;
@@ -82,23 +83,33 @@ describe('Integration | flush', () => {
     mockRunFlush.mockClear();
     mockAddMemoryEntry.mockClear();
 
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+
     if (replay.eventBuffer) {
       jest.spyOn(replay.eventBuffer, 'finish');
     }
     mockEventBufferFinish = replay.eventBuffer?.finish as MockEventBufferFinish;
     mockEventBufferFinish.mockClear();
+
+    Object.defineProperty(SentryUtils, 'browserPerformanceTimeOrigin', {
+      value: BASE_TIMESTAMP,
+      writable: true,
+    });
   });
 
   afterEach(async () => {
     jest.runAllTimers();
     await new Promise(process.nextTick);
     jest.setSystemTime(new Date(BASE_TIMESTAMP));
-    sessionStorage.clear();
-    clearSession(replay);
-    replay['_loadAndCheckSession']();
     mockRecord.takeFullSnapshot.mockClear();
     Object.defineProperty(WINDOW, 'location', {
       value: prevLocation,
+      writable: true,
+    });
+    Object.defineProperty(SentryUtils, 'browserPerformanceTimeOrigin', {
+      value: prevBrowserPerformanceTimeOrigin,
       writable: true,
     });
   });
@@ -223,6 +234,7 @@ describe('Integration | flush', () => {
     // flush #5 @ t=25s - debounced flush calls `flush`
     // 20s + `flushMinDelay` which is 5 seconds
     await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+
     expect(mockFlush).toHaveBeenCalledTimes(5);
     expect(mockRunFlush).toHaveBeenCalledTimes(2);
     expect(mockSendReplay).toHaveBeenLastCalledWith({
@@ -257,5 +269,218 @@ describe('Integration | flush', () => {
     // Make sure there's nothing queued up after
     await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
     expect(mockFlush).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not flush if session is too short', async () => {
+    replay.getOptions().minReplayDuration = 100_000;
+
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+
+    // click happens first
+    domHandler({
+      name: 'click',
+    });
+
+    // checkout
+    const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP, type: 2 };
+    mockRecord._emitter(TEST_EVENT);
+
+    await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockSendReplay).toHaveBeenCalledTimes(0);
+
+    // it should re-schedule the flush, so once the min. duration is reached it should automatically send it
+    await advanceTimers(100_000 - DEFAULT_FLUSH_MIN_DELAY);
+
+    expect(mockFlush).toHaveBeenCalledTimes(20);
+    expect(mockSendReplay).toHaveBeenCalledTimes(1);
+
+    replay.getOptions().minReplayDuration = 0;
+  });
+
+  it('does not flush if session is too long', async () => {
+    replay.timeouts.maxSessionLife = 100_000;
+    jest.setSystemTime(BASE_TIMESTAMP);
+
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+    // No-op _loadAndCheckSession to avoid us resetting the session for this test
+    const _tmp = replay['_loadAndCheckSession'];
+    replay['_loadAndCheckSession'] = () => {
+      return true;
+    };
+
+    await advanceTimers(120_000);
+
+    // click happens first
+    domHandler({
+      name: 'click',
+    });
+
+    // checkout
+    const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP, type: 2 };
+    mockRecord._emitter(TEST_EVENT);
+
+    await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockSendReplay).toHaveBeenCalledTimes(0);
+
+    replay.timeouts.maxSessionLife = MAX_SESSION_LIFE;
+    replay['_loadAndCheckSession'] = _tmp;
+  });
+
+  it('logs warning if flushing initial segment without checkout', async () => {
+    replay.getOptions()._experiments.traceInternals = true;
+
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+    await new Promise(process.nextTick);
+    jest.setSystemTime(BASE_TIMESTAMP);
+
+    // Clear the event buffer to simulate no checkout happened
+    replay.eventBuffer!.clear();
+
+    // click happens first
+    domHandler({
+      name: 'click',
+    });
+
+    // no checkout!
+    await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockSendReplay).toHaveBeenCalledTimes(1);
+
+    const replayData = mockSendReplay.mock.calls[0][0];
+
+    expect(JSON.parse(replayData.recordingData)).toEqual([
+      {
+        type: 5,
+        timestamp: BASE_TIMESTAMP,
+        data: {
+          tag: 'breadcrumb',
+          payload: {
+            timestamp: BASE_TIMESTAMP / 1000,
+            type: 'default',
+            category: 'ui.click',
+            message: '<unknown>',
+            data: {},
+          },
+        },
+      },
+      {
+        type: 5,
+        timestamp: BASE_TIMESTAMP + DEFAULT_FLUSH_MIN_DELAY,
+        data: {
+          tag: 'breadcrumb',
+          payload: {
+            timestamp: (BASE_TIMESTAMP + DEFAULT_FLUSH_MIN_DELAY) / 1000,
+            type: 'default',
+            category: 'console',
+            data: { logger: 'replay' },
+            level: 'info',
+            message: '[Replay] Flushing initial segment without checkout.',
+          },
+        },
+      },
+    ]);
+
+    replay.getOptions()._experiments.traceInternals = false;
+  });
+
+  it('logs warning if adding event that is after maxSessionLife', async () => {
+    replay.getOptions()._experiments.traceInternals = true;
+
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+    await new Promise(process.nextTick);
+    jest.setSystemTime(BASE_TIMESTAMP);
+
+    replay.eventBuffer!.clear();
+
+    // We do not care about this warning here
+    replay.eventBuffer!.hasCheckout = true;
+
+    // Add event that is too long after session start
+    const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP + MAX_SESSION_LIFE + 100, type: 2 };
+    mockRecord._emitter(TEST_EVENT);
+
+    // no checkout!
+    await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockSendReplay).toHaveBeenCalledTimes(1);
+
+    const replayData = mockSendReplay.mock.calls[0][0];
+
+    expect(JSON.parse(replayData.recordingData)).toEqual([
+      {
+        type: 5,
+        timestamp: BASE_TIMESTAMP,
+        data: {
+          tag: 'breadcrumb',
+          payload: {
+            timestamp: BASE_TIMESTAMP / 1000,
+            type: 'default',
+            category: 'console',
+            data: { logger: 'replay' },
+            level: 'info',
+            message: `[Replay] Skipping event with timestamp ${
+              BASE_TIMESTAMP + MAX_SESSION_LIFE + 100
+            } because it is after maxSessionLife`,
+          },
+        },
+      },
+    ]);
+
+    replay.getOptions()._experiments.traceInternals = false;
+  });
+
+  /**
+   * This tests the case where a flush happens in time,
+   * but something takes too long (e.g. because we are idle, ...)
+   * so by the time we actually send the replay it's too late.
+   * In this case, we want to stop the replay.
+   */
+  it('stops if flushing after maxSessionLife', async () => {
+    replay.timeouts.maxSessionLife = 100_000;
+
+    sessionStorage.clear();
+    clearSession(replay);
+    replay['_loadAndCheckSession']();
+    await new Promise(process.nextTick);
+    jest.setSystemTime(BASE_TIMESTAMP);
+
+    replay.eventBuffer!.clear();
+
+    // We do not care about this warning here
+    replay.eventBuffer!.hasCheckout = true;
+
+    // We want to simulate that flushing happens _way_ late
+    replay['_addPerformanceEntries'] = () => {
+      return new Promise(resolve => setTimeout(resolve, 140_000));
+    };
+
+    // Add event inside of session life timespan
+    const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP + 100, type: 2 };
+    mockRecord._emitter(TEST_EVENT);
+
+    await advanceTimers(160_000);
+
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockSendReplay).toHaveBeenCalledTimes(0);
+    expect(replay.isEnabled()).toBe(false);
+
+    replay.timeouts.maxSessionLife = MAX_SESSION_LIFE;
+
+    // Start again for following tests
+    await replay.start();
   });
 });

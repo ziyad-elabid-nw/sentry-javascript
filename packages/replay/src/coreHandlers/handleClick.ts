@@ -2,6 +2,7 @@ import type { Breadcrumb } from '@sentry/types';
 
 import { WINDOW } from '../constants';
 import type { MultiClickFrame, ReplayClickDetector, ReplayContainer, SlowClickConfig, SlowClickFrame } from '../types';
+import { timestampToS } from '../util/timestamp';
 import { addBreadcrumbEvent } from './util/addBreadcrumbEvent';
 import { getClickTargetNode } from './util/domUtils';
 import { onWindowOpen } from './util/onWindowOpen';
@@ -27,10 +28,10 @@ export function handleClick(clickDetector: ReplayClickDetector, clickBreadcrumb:
 /** A click detector class that can be used to detect slow or rage clicks on elements. */
 export class ClickDetector implements ReplayClickDetector {
   // protected for testing
-  protected _lastMutation = 0;
-  protected _lastScroll = 0;
+  protected _lastMutation: number;
+  protected _lastScroll: number;
 
-  private _clicks: Click[] = [];
+  private _clicks: Click[];
   private _teardown: undefined | (() => void);
 
   private _threshold: number;
@@ -48,6 +49,10 @@ export class ClickDetector implements ReplayClickDetector {
     // Just for easier testing
     _addBreadcrumbEvent = addBreadcrumbEvent,
   ) {
+    this._lastMutation = 0;
+    this._lastScroll = 0;
+    this._clicks = [];
+
     // We want everything in s, but options are in ms
     this._timeout = slowClickConfig.timeout / 1000;
     this._threshold = slowClickConfig.threshold / 1000;
@@ -125,12 +130,20 @@ export class ClickDetector implements ReplayClickDetector {
     }
 
     const newClick: Click = {
-      timestamp: breadcrumb.timestamp,
+      timestamp: timestampToS(breadcrumb.timestamp),
       clickBreadcrumb: breadcrumb,
       // Set this to 0 so we know it originates from the click breadcrumb
       clickCount: 0,
       node,
     };
+
+    // If there was a click in the last 1s on the same element, ignore it - only keep a single reference per second
+    if (
+      this._clicks.some(click => click.node === newClick.node && Math.abs(click.timestamp - newClick.timestamp) < 1)
+    ) {
+      return;
+    }
+
     this._clicks.push(newClick);
 
     // If this is the first new click, set a timeout to check for multi clicks
@@ -165,6 +178,7 @@ export class ClickDetector implements ReplayClickDetector {
         click.scrollAfter = click.timestamp <= this._lastScroll ? this._lastScroll - click.timestamp : undefined;
       }
 
+      // All of these are in seconds!
       if (click.timestamp + this._timeout <= now) {
         timedOutClicks.push(click);
       }
@@ -172,10 +186,10 @@ export class ClickDetector implements ReplayClickDetector {
 
     // Remove "old" clicks
     for (const click of timedOutClicks) {
-      this._generateBreadcrumbs(click);
-
       const pos = this._clicks.indexOf(click);
-      if (pos !== -1) {
+
+      if (pos > -1) {
+        this._generateBreadcrumbs(click);
         this._clicks.splice(pos, 1);
       }
     }

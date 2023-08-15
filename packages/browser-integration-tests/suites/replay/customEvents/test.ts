@@ -81,8 +81,8 @@ sentryTest(
 sentryTest(
   'replay recording should contain a click breadcrumb when a button is clicked',
   async ({ forceFlushReplay, getLocalTestPath, page, browserName }) => {
-    // TODO(replay): This is flakey on firefox and webkit where clicks are flakey
-    if (shouldSkipReplayTest() || ['firefox', 'webkit'].includes(browserName)) {
+    // TODO(replay): This is flakey on webkit where clicks are flakey
+    if (shouldSkipReplayTest() || browserName === 'webkit') {
       sentryTest.skip();
     }
 
@@ -112,12 +112,12 @@ sentryTest(
       expect.arrayContaining([
         {
           ...expectedClickBreadcrumb,
-          message: 'body > div#error.btn.btn-error[aria-label="An Error"]',
+          message: 'body > div#error.btn.btn-error[aria-label="An Error in aria-label"]',
           data: {
             nodeId: expect.any(Number),
             node: {
               attributes: {
-                'aria-label': '** *****',
+                'aria-label': '** ***** ** **********',
                 class: 'btn btn-error',
                 id: 'error',
                 role: 'button',
@@ -177,8 +177,8 @@ sentryTest(
 sentryTest(
   'replay recording should contain an "options" breadcrumb for Replay SDK configuration',
   async ({ forceFlushReplay, getLocalTestPath, page, browserName }) => {
-    // TODO(replay): This is flakey on firefox and webkit where clicks are flakey
-    if (shouldSkipReplayTest() || ['firefox', 'webkit'].includes(browserName)) {
+    // TODO(replay): This is flakey on webkit where clicks are flakey
+    if (shouldSkipReplayTest() || browserName === 'webkit') {
       sentryTest.skip();
     }
 

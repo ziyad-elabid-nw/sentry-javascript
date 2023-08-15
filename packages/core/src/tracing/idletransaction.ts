@@ -69,28 +69,27 @@ export type BeforeFinishCallback = (transactionSpan: IdleTransaction, endTimesta
  */
 export class IdleTransaction extends Transaction {
   // Activities store a list of active spans
-  public activities: Record<string, boolean> = {};
-
+  public activities: Record<string, boolean>;
   // Track state of activities in previous heartbeat
   private _prevHeartbeatString: string | undefined;
 
   // Amount of times heartbeat has counted. Will cause transaction to finish after 3 beats.
-  private _heartbeatCounter: number = 0;
+  private _heartbeatCounter: number;
 
   // We should not use heartbeat if we finished a transaction
-  private _finished: boolean = false;
+  private _finished: boolean;
 
   // Idle timeout was canceled and we should finish the transaction with the last span end.
-  private _idleTimeoutCanceledPermanently: boolean = false;
+  private _idleTimeoutCanceledPermanently: boolean;
 
-  private readonly _beforeFinishCallbacks: BeforeFinishCallback[] = [];
+  private readonly _beforeFinishCallbacks: BeforeFinishCallback[];
 
   /**
    * Timer that tracks Transaction idleTimeout
    */
   private _idleTimeoutID: ReturnType<typeof setTimeout> | undefined;
 
-  private _finishReason: (typeof IDLE_TRANSACTION_FINISH_REASONS)[number] = IDLE_TRANSACTION_FINISH_REASONS[4];
+  private _finishReason: (typeof IDLE_TRANSACTION_FINISH_REASONS)[number];
 
   public constructor(
     transactionContext: TransactionContext,
@@ -109,6 +108,13 @@ export class IdleTransaction extends Transaction {
     private readonly _onScope: boolean = false,
   ) {
     super(transactionContext, _idleHub);
+
+    this.activities = {};
+    this._heartbeatCounter = 0;
+    this._finished = false;
+    this._idleTimeoutCanceledPermanently = false;
+    this._beforeFinishCallbacks = [];
+    this._finishReason = IDLE_TRANSACTION_FINISH_REASONS[4];
 
     if (_onScope) {
       // We set the transaction here on the scope so error events pick up the trace
@@ -158,15 +164,22 @@ export class IdleTransaction extends Transaction {
             logger.log('[Tracing] cancelling span since transaction ended early', JSON.stringify(span, undefined, 2));
         }
 
-        const keepSpan = span.startTimestamp < endTimestamp;
-        if (!keepSpan) {
-          __DEBUG_BUILD__ &&
-            logger.log(
-              '[Tracing] discarding Span since it happened after Transaction was finished',
-              JSON.stringify(span, undefined, 2),
-            );
+        const spanStartedBeforeTransactionFinish = span.startTimestamp < endTimestamp;
+
+        // Add a delta with idle timeout so that we prevent false positives
+        const timeoutWithMarginOfError = (this._finalTimeout + this._idleTimeout) / 1000;
+        const spanEndedBeforeFinalTimeout = span.endTimestamp - this.startTimestamp < timeoutWithMarginOfError;
+
+        if (__DEBUG_BUILD__) {
+          const stringifiedSpan = JSON.stringify(span, undefined, 2);
+          if (!spanStartedBeforeTransactionFinish) {
+            logger.log('[Tracing] discarding Span since it happened after Transaction was finished', stringifiedSpan);
+          } else if (!spanEndedBeforeFinalTimeout) {
+            logger.log('[Tracing] discarding Span since it finished after Transaction final timeout', stringifiedSpan);
+          }
         }
-        return keepSpan;
+
+        return spanStartedBeforeTransactionFinish && spanEndedBeforeFinalTimeout;
       });
 
       __DEBUG_BUILD__ && logger.log('[Tracing] flushing IdleTransaction');

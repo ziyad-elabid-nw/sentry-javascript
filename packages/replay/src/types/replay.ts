@@ -181,6 +181,13 @@ export interface ReplayPluginOptions extends ReplayNetworkOptions {
   slowClickIgnoreSelectors: string[];
 
   /**
+   * The min. duration (in ms) a replay has to have before it is sent to Sentry.
+   * Whenever attempting to flush a session that is shorter than this, it will not actually send it to Sentry.
+   * Note that this is capped at max. 15s.
+   */
+  minReplayDuration: number;
+
+  /**
    * Callback before adding a custom recording event
    *
    * Events added by the underlying DOM recording library can *not* be modified,
@@ -383,6 +390,11 @@ export interface EventBuffer {
   readonly type: EventBufferType;
 
   /**
+   * If the event buffer contains a checkout event.
+   */
+  hasCheckout: boolean;
+
+  /**
    * Destroy the event buffer.
    */
   destroy(): void;
@@ -439,7 +451,7 @@ export interface ReplayContainer {
   getContext(): InternalEventContext;
   initializeSampling(): void;
   start(): void;
-  stop(reason?: string): Promise<void>;
+  stop(options?: { reason?: string; forceflush?: boolean }): Promise<void>;
   pause(): void;
   resume(): void;
   startRecording(): void;

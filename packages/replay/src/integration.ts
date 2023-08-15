@@ -2,7 +2,12 @@ import { getCurrentHub } from '@sentry/core';
 import type { BrowserClientReplayOptions, Integration } from '@sentry/types';
 import { dropUndefinedKeys } from '@sentry/utils';
 
-import { DEFAULT_FLUSH_MAX_DELAY, DEFAULT_FLUSH_MIN_DELAY } from './constants';
+import {
+  DEFAULT_FLUSH_MAX_DELAY,
+  DEFAULT_FLUSH_MIN_DELAY,
+  MIN_REPLAY_DURATION,
+  MIN_REPLAY_DURATION_LIMIT,
+} from './constants';
 import { ReplayContainer } from './replay';
 import type { RecordingOptions, ReplayConfiguration, ReplayPluginOptions, SendBufferedReplayOptions } from './types';
 import { getPrivacyOptions } from './util/getPrivacyOptions';
@@ -30,7 +35,7 @@ export class Replay implements Integration {
   /**
    * @inheritDoc
    */
-  public name: string = Replay.id;
+  public name: string;
 
   /**
    * Options to pass to `rrweb.record()`
@@ -51,6 +56,7 @@ export class Replay implements Integration {
   public constructor({
     flushMinDelay = DEFAULT_FLUSH_MIN_DELAY,
     flushMaxDelay = DEFAULT_FLUSH_MAX_DELAY,
+    minReplayDuration = MIN_REPLAY_DURATION,
     stickySession = true,
     useCompression = true,
     _experiments = {},
@@ -94,6 +100,8 @@ export class Replay implements Integration {
     // eslint-disable-next-line deprecation/deprecation
     ignoreClass,
   }: ReplayConfiguration = {}) {
+    this.name = Replay.id;
+
     this._recordingOptions = {
       maskAllInputs,
       maskAllText,
@@ -127,6 +135,7 @@ export class Replay implements Integration {
     this._initialOptions = {
       flushMinDelay,
       flushMaxDelay,
+      minReplayDuration: Math.min(minReplayDuration, MIN_REPLAY_DURATION_LIMIT),
       stickySession,
       sessionSampleRate,
       errorSampleRate,
@@ -254,7 +263,7 @@ Sentry.init({ replaysOnErrorSampleRate: ${errorSampleRate} })`,
       return Promise.resolve();
     }
 
-    return this._replay.stop();
+    return this._replay.stop({ forceFlush: this._replay.recordingMode === 'session' });
   }
 
   /**

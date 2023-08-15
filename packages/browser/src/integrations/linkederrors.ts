@@ -21,7 +21,7 @@ export class LinkedErrors implements Integration {
   /**
    * @inheritDoc
    */
-  public readonly name: string = LinkedErrors.id;
+  public readonly name: string;
 
   /**
    * @inheritDoc
@@ -37,6 +37,7 @@ export class LinkedErrors implements Integration {
    * @inheritDoc
    */
   public constructor(options: Partial<LinkedErrorsOptions> = {}) {
+    this.name = LinkedErrors.id;
     this._key = options.key || DEFAULT_KEY;
     this._limit = options.limit || DEFAULT_LIMIT;
   }
@@ -54,9 +55,11 @@ export class LinkedErrors implements Integration {
         return event;
       }
 
+      const options = client.getOptions();
       applyAggregateErrorsToEvent(
         exceptionFromError,
-        client.getOptions().stackParser,
+        options.stackParser,
+        options.maxValueLength,
         self._key,
         self._limit,
         event,

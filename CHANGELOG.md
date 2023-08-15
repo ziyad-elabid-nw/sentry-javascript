@@ -4,6 +4,131 @@
 
 - "You miss 100 percent of the chances you don't take. — Wayne Gretzky" — Michael Scott
 
+## 7.64.0
+
+- feat(core): Add setMeasurement export (#8791)
+- fix(nextjs): Check for existence of default export when wrapping pages (#8794)
+- fix(nextjs): Ensure imports are valid relative paths (#8799)
+- fix(nextjs): Only re-export default export if it exists (#8800)
+
+## 7.63.0
+
+- build(deps): bump @opentelemetry/instrumentation from 0.41.0 to 0.41.2
+- feat(eventbuilder): Export `exceptionFromError` for use in hybrid SDKs (#8766)
+- feat(node-experimental): Re-export from node (#8786)
+- feat(tracing): Add db connection attributes for mysql spans (#8775)
+- feat(tracing): Add db connection attributes for postgres spans (#8778)
+- feat(tracing): Improve data collection for mongodb spans (#8774)
+- fix(nextjs): Execute sentry config independently of `autoInstrumentServerFunctions` and `autoInstrumentAppDirectory` (#8781)
+- fix(replay): Ensure we do not flush if flush took too long (#8784)
+- fix(replay): Ensure we do not try to flush when we force stop replay (#8783)
+- fix(replay): Fix `hasCheckout` handling (#8782)
+- fix(replay): Handle multiple clicks in a short time (#8773)
+- ref(replay): Skip events being added too long after initial segment (#8768)
+
+## 7.62.0
+
+### Important Changes
+
+- **feat(integrations): Add `ContextLines` integration for html-embedded JS stack frames (#8699)**
+
+This release adds the `ContextLines` integration as an optional integration for the Browser SDKs to `@sentry/integrations`.
+
+This integration adds source code from inline JavaScript of the current page's HTML (e.g. JS in `<script>` tags) to stack traces of captured errors.
+It _can't_ collect source code from assets referenced by your HTML (e.g. `<script src="..." />`).
+
+The `ContextLines` integration is useful when you have inline JS code in HTML pages that can't be accessed by Sentry's backend, for example, due to a login-protected page.
+
+```js
+import { ContextLines } from "@sentry/integrations";
+
+Sentry.init({
+  // ...
+  integrations: [
+    new ContextLines({
+      // The number of lines to collect before and after each stack frame's line number
+      // Defaults to 7
+      frameContextLines: 7,
+    }),
+  ],
+});
+```
+
+### Other Changes
+
+- fix(nextjs): Make all wrappers isomorphic and available in all runtimes (#8743)
+- fix(replay): Cancel debounce when replay is too short/long (#8742)
+- fix(utils): `dirname` and `basename` should handle Windows paths (#8737)
+- ref: Hoist `flush`, `close`, and `lastEventId` into `@sentry/core` (#8731)
+- ref(node): Don't call `JSON.stringify` on prisma client when logging (#8745)
+
+## 7.61.1
+
+- feat(nextjs): Add `AsyncLocalStorage` async context strategy to edge SDK (#8720)
+- fix(core): Filter internal API frames for synthetic frames (#8710)
+- fix(integrations): Capture exception if any arg to console method is an error (#8671)
+- fix(node-experimental): Update auto integration lookup & readme (#8690)
+- fix(node): Add availablility check on current hub to Node `ContextLines` integration (#8715)
+- fix(replay): Ensure buffer sessions end after capturing an error (#8713)
+- fix(replay): Ensure buffer->session switch is reliable (#8712)
+- fix(replay): Ensure we debounce flush if replay too short (#8716)
+- fix(replay): Improve capture of errorIds/traceIds (#8678)
+- fix(tracing): Set correct parent span id on fetch sentry-trace header (#8687)
+- fix(utils): Avoid `pre_context` and `context_line` overlap if frame lineno is out of bounds (#8722)
+- ref(replay): Improve status logging (#8709)
+- ref(nextjs): Allow withSentryConfig to accept async config function (#8721)
+
+## 7.61.0
+
+### Important Changes
+
+- **feat(node-experimental): Add `@sentry/node-experimental` package as MVP for POTEL (#8609)**
+
+This introduces a new, *experimental* package, `@sentry/node-experimental`.
+This is a variant of the Node SDK which uses OpenTelemetry under the hood for performance instrumentation.
+
+Note that this package is very much WIP, considered unstable and may change at any time.
+**No SemVer guarantees apply whatsoever.** Still, if you're brave enough you can give it a try.
+[Read more about @sentry/node-experimental](./packages/node-experimental/README.md)
+
+### Other Changes
+
+- fix(node): Don't set extra baggage headers (#8657)
+- fix(tracing): Trim idle transaction spans if they exceed final timeout (#8653)
+
+## 7.60.1
+
+- fix(nextjs): Match folder paths with trailing separator (#8615)
+- fix(replay): Ignore clicks with `shift` pressed (#8648)
+- fix(replay): Use `session.started` for min/max duration check (#8617)
+
+## 7.60.0
+
+### Important Changes
+
+- **feat(replay): Ensure min/max duration when flushing (#8596)**
+
+We will not send replays that are <5s long anymore. Additionally, we also added further safeguards to avoid overly long (>1h) replays.
+You can optionally configure the min. replay duration (defaults to 5s):
+
+```js
+new Replay({
+  minReplayDuration: 10000 // in ms - note that this is capped at 15s max!
+})
+```
+
+### Other Changes
+
+- fix(profiling): Align to SDK selected time origin (#8599)
+- fix(replay): Ensure multi click has correct timestamps (#8591)
+- fix(utils): Truncate aggregate exception values (LinkedErrors) (#8593)
+
+## 7.59.3
+
+- fix(browser): 0 is a valid index (#8581)
+- fix(nextjs): Ensure Webpack plugin is available after dynamic require (#8584)
+- types(browser): Add browser profiling client options (#8565)
+
 ## 7.59.2
 
 No changes. This release was published to fix publishing issues with 7.59.0 and 7.59.1.

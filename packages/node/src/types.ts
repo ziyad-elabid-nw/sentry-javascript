@@ -1,8 +1,27 @@
-import type { ClientOptions, Options, SamplingContext } from '@sentry/types';
+import type { ClientOptions, Options, SamplingContext, TracePropagationTargets } from '@sentry/types';
 
+import type { NodeClient } from './client';
 import type { NodeTransportOptions } from './transports';
 
 export interface BaseNodeOptions {
+  /**
+   * List of strings/regex controlling to which outgoing requests
+   * the SDK will attach tracing headers.
+   *
+   * By default the SDK will attach those headers to all outgoing
+   * requests. If this option is provided, the SDK will match the
+   * request URL of outgoing requests against the items in this
+   * array, and only attach tracing headers if a match was found.
+   *
+   * @example
+   * ```js
+   * Sentry.init({
+   *   tracePropagationTargets: ['api.site.com'],
+   * });
+   * ```
+   */
+  tracePropagationTargets?: TracePropagationTargets;
+
   /**
    * Sets profiling sample rate when @sentry/profiling-node is installed
    */
@@ -31,6 +50,14 @@ export interface BaseNodeOptions {
    * Requires the `LocalVariables` integration.
    */
   includeLocalVariables?: boolean;
+
+  /**
+   * Specify a custom NodeClient to be used. Must extend NodeClient!
+   * This is not a public, supported API, but used internally only.
+   *
+   * @hidden
+   *  */
+  clientClass?: typeof NodeClient;
 
   // TODO (v8): Remove this in v8
   /**
